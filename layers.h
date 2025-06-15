@@ -469,7 +469,9 @@ class Router: public EndDevices{
   
   string IP1,IP2,IP3,MAC1,MAC2,MAC3;
   vector<Switch> connected_devices;
-  map<string,pair<string,string>> routing_table;
+  // map<string,pair<string,string>> routing_table;
+  map<pair<string, int>, pair<string, string>> routing_table;
+
   //intialising ip and mac of interfaces of router
   Router(){}
   Router(int Id){
@@ -481,9 +483,10 @@ class Router: public EndDevices{
   void setAddress(string IP1,string IP2,string IP3,string  MAC1,string  MAC2,string MAC3){
     this->IP1=IP1;
     this->IP2=IP2;
+    this->IP3=IP3;
     this->MAC1=MAC1;
     this->MAC2=MAC2;
-    this->IP3=MAC3;
+    this->MAC3=MAC3;
   }
  
  
@@ -517,28 +520,75 @@ int random(int min, int max) {
       return NID;
 }
 //generate classless IPV4 Address
-string generate_classless_ip(string NID){
-  NID.pop_back();
-  
-    for (int i = 0; i < 4; i++) {
-        int octet = random(0, 255);
-        // Append the octet to the IPv4 address with a dot
-        
-        if(i==3){
-          NID+=to_string(octet)+"/24";
-        }
-      }
-      
-      return NID;
-}
-bool sameNID(string sourceIp,string destinationIp){
-  for(int i=0;i<6;i++){
-    if(sourceIp[i]!=destinationIp[i]){
-      return false;
+string generate_classless_ip(string NID) {
+    // Assume NID is like "192.168.1.0" with no slash
+    vector<string> parts;
+    stringstream ss(NID);
+    string token;
+    while (getline(ss, token, '.')) {
+        parts.push_back(token);
     }
-  }
-  return true;
+
+    int randomHost = rand() % 254 + 1;
+    string newIP = parts[0] + "." + parts[1] + "." + parts[2] + "." + to_string(randomHost);
+    
+    return newIP + "/24";  // Append /24 yourself
 }
+
+
+// bool sameNID(string sourceIp,string destinationIp){
+//   for(int i=0;i<6;i++){
+//     if(sourceIp[i]!=destinationIp[i]){
+//       return false;
+//     }
+//   }
+//   return true;
+// }
+string getNID(string ip, int prefix = 24) {
+    // Extracts Network ID from an IP address and prefix
+    stringstream ss(ip);
+    vector<int> octets;
+    string token;
+
+    while (getline(ss, token, '.')) {
+        octets.push_back(stoi(token));
+    }
+
+    uint32_t ip_int = (octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3];
+    uint32_t mask = 0xFFFFFFFF << (32 - prefix);
+    uint32_t nid_int = ip_int & mask;
+
+    // Convert back to dotted format
+    string nid = to_string((nid_int >> 24) & 0xFF) + "." +
+                 to_string((nid_int >> 16) & 0xFF) + "." +
+                 to_string((nid_int >> 8) & 0xFF) + "." +
+                 to_string(nid_int & 0xFF);
+    return nid;
+}
+bool sameNID(string ip, string nid) {
+    return sameNID(ip, nid, 24);  // Default prefix is 24
+}
+
+unsigned int ipToInt(string ip) {
+    std::stringstream ss(ip);
+    string token;
+    unsigned int result = 0;
+    for (int i = 0; i < 4; i++) {
+        getline(ss, token, '.');
+        result = (result << 8) + stoi(token);
+    }
+    return result;
+}
+
+bool sameNID(string ip, string nid, int prefix) {
+    // Convert both IP and NID to 32-bit integers and compare relevant bits
+    unsigned int ipInt = ipToInt(ip);
+    unsigned int nidInt = ipToInt(nid);
+    unsigned int mask = ~((1 << (32 - prefix)) - 1);
+
+    return (ipInt & mask) == (nidInt & mask);
+}
+
 int NetworkNo(string sourceIp){
   if(IP1.substr(0,6)==sourceIp.substr(0,6)){
     return 1;
@@ -547,48 +597,125 @@ int NetworkNo(string sourceIp){
     return 2;
   }
 }
-void Routing_Table(Router &r,int source){
-  //manually configure the router
-  //NID  INTERFACE NEXT HOP
-  routing_table[IP1]={"1","0"};
-  routing_table[IP2]={"2","0"};
-  if(source==1){
-  routing_table[r.IP2]={"2",r.IP1};
-  }
-  else{
-    routing_table[r.IP1]={"2",r.IP2};
-  }
-}
-void Print_Routing_Table(int source) {
-  cout<<endl;
-  std::cout << std::endl;
-  cout<<"Routing Table of Router "<<source<<endl;
-  std::cout << std::left << std::setw(15) << "NID";
-  std::cout << std::left << std::setw(12) << "Interface";
-  std::cout << std::left << std::setw(10) << "Next Hop" << std::endl;
+void Routing_Table(Router &r, int source) {
+    // Extract NIDs from local and remote router interfaces
+    string nid1 = getNID(IP1);       // Local interface 1
+    string nid2 = getNID(IP2);       // Local interface 2
+    string rnid1 = getNID(r.IP1);    // Remote router interface 1
+    string rnid2 = getNID(r.IP2);    // Remote router interface 2
 
-  std::cout << std::setfill('-') << std::setw(39) << "" << std::endl; // Separator line
+    // Directly connected networks
+    routing_table[{nid1, 24}] = {"1", "0"};
+    routing_table[{nid2, 24}] = {"2", "0"};
 
-  std::cout << std::setfill(' '); // Reset fill character
-
-  for (auto it : routing_table) {
-    std::cout << std::left << std::setw(15) << it.first;
-    std::cout << std::left << std::setw(12) << it.second.first;
-    std::cout << std::left << std::setw(10) << it.second.second << std::endl;
-  }
-
-  std::cout << std::endl;
-}
-//traverse through routing table and check for NID that matches destination ip
-void routing_decision(string destinationIp){
-  for(auto it:routing_table){
-    //Check if NetworkId matches then break , it.first is NID HERE
-    if(sameNID(it.first,destinationIp)){
-       cout<<"Sending packet to Network "<<it.first<<" on interface "<<it.second.first<<endl;
-       break;
+    // Static routes to other router's networks
+    if (source == 1) {
+        routing_table[{rnid2, 24}] = {"2", r.IP1};         // Route to Router 2 network
+        routing_table[{"0.0.0.0", 0}] = {"2", r.IP1};      // Default route
+    } else {
+        routing_table[{rnid1, 24}] = {"2", r.IP2};         // Route to Router 1 network
+        routing_table[{"0.0.0.0", 0}] = {"2", r.IP2};      // Default route
     }
-  }
 }
+
+// void Routing_Table(Router &r,int source){
+//   //manually configure the router
+//   //NID  INTERFACE NEXT HOP
+//   routing_table[IP1]={"1","0"};
+//   routing_table[IP2]={"2","0"};
+//   if(source==1){
+//   routing_table[r.IP2]={"2",r.IP1};
+//   }
+//   else{
+//     routing_table[r.IP1]={"2",r.IP2};
+//   }
+// }
+// void Print_Routing_Table(int source) {
+//   cout<<endl;
+//   std::cout << std::endl;
+//   cout<<"Routing Table of Router "<<source<<endl;
+//   std::cout << std::left << std::setw(15) << "NID";
+//   std::cout << std::left << std::setw(12) << "Interface";
+//   std::cout << std::left << std::setw(10) << "Next Hop" << std::endl;
+
+//   std::cout << std::setfill('-') << std::setw(39) << "" << std::endl; // Separator line
+
+//   std::cout << std::setfill(' '); // Reset fill character
+
+//   for (auto it : routing_table) {
+//     std::cout << std::left << std::setw(15) << it.first;
+//     std::cout << std::left << std::setw(12) << it.second.first;
+//     std::cout << std::left << std::setw(10) << it.second.second << std::endl;
+//   }
+
+//   std::cout << std::endl;
+// }original function 
+void Print_Routing_Table(int source) {
+    cout << endl;
+    cout << "Routing Table of Router " << source << endl;
+    cout << left << setw(18) << "NID/Prefix"
+         << setw(12) << "Interface"
+         << setw(10) << "Next Hop" << endl;
+    cout << setfill('-') << setw(40) << "" << setfill(' ') << endl;
+
+    // Convert routing_table (map<pair<string,int>, pair<string,string>>) to vector for sorting
+    vector<pair<pair<string, int>, pair<string, string>>> entries(routing_table.begin(), routing_table.end());
+
+    // Sort by prefix length in descending order (e.g., /24 before /0)
+    sort(entries.begin(), entries.end(), [](auto &a, auto &b) {
+        return a.first.second > b.first.second;
+    });
+
+    // Now print
+    for (auto &entry : entries) {
+        string nid = entry.first.first;
+        int prefix = entry.first.second;
+        string interface = entry.second.first;
+        string nextHop = entry.second.second;
+
+        cout << left << setw(18) << (nid + "/" + to_string(prefix))
+             << setw(12) << interface
+             << setw(10) << nextHop << endl;
+    }
+}
+
+
+//traverse through routing table and check for NID that matches destination ip
+// void routing_decision(string destinationIp){
+//   for(auto it:routing_table){
+//     //Check if NetworkId matches then break , it.first is NID HERE
+//     if(sameNID(it.first,destinationIp)){
+//        cout<<"Sending packet to Network "<<it.first<<" on interface "<<it.second.first<<endl;
+//        break;
+//     }
+//   }
+// }
+void routing_decision(string destinationIp) {
+    int bestPrefix = -1;
+    pair<string, int> bestMatch;
+    pair<string, string> route;
+
+    for (auto &entry : routing_table) {
+        string nid = entry.first.first;
+        int prefix = entry.first.second;
+
+        if (sameNID(destinationIp, nid, prefix)) {
+            if (prefix > bestPrefix) {
+                bestPrefix = prefix;
+                bestMatch = entry.first;
+                route = entry.second;
+            }
+        }
+    }
+
+    if (bestPrefix != -1) {
+        std::cout << "Sending packet to NID " << bestMatch.first << "/" << bestPrefix
+                  << " via interface " << route.first << " next hop " << route.second << "\n";
+    } else {
+        std::cout << "No route found for IP " << destinationIp << "\n";
+    }
+}
+
 void print_ArpCache(int source){
         cout<<endl;
         cout<<"ARP Cache of Router "<<source<<" is as :"<<endl;

@@ -73,7 +73,7 @@ class EndDevices{
     string command = "curl -s https://" + domain;
 
     // Open a pipe to read the response
-    FILE* pipe = popen(command.c_str(), "r"); 
+    FILE* pipe = popen(command.c_str(), "r"); //read from process output
     if (!pipe) {
         cerr << "Error executing command." << std::endl;
         return 1;
@@ -228,98 +228,124 @@ class EndDevices{
            
        }
       int R_n=0;
-      int selective_reciever(int packet){
-        
-        selective_window[packet]=true;
-        int AckNo=packet;
-        //slide recieving window if consecutive elements are marked
-        int count=0;
-          for(int j=0;j<selective_window.size();j++){
-                if(selective_window[j]==false){
-                  break;
-                }
-                count++;
-          }
-          R_n=count;
-          ack=true;
-        return AckNo;
-
+      
+      int calculate_checksum(int packet) {
+          // For demonstration, treat packet number as data
+          // In real scenarios, this would be the sum of all bytes in the packet
+          return packet % 256;
       }
-    void selective_sender(){
-           srand(time(nullptr));
-           int S_n=0,S_f=1,S_z=selective_window.size();
-           int i=0,AckNo;   
-           while(i<S_z){
-           srand(time(NULL));
-           ack=false;
-           int timeout_duration=4,sending_time=rand()%6,recieving_time=rand()%6; 
-          
-          
-           sleep(sending_time); 
-           if(sending_time> timeout_duration){         //packet got lost
-            cout<<"Sender sends packet with sequence number "<<i <<" but it got lost"<<endl; 
-            i++;
-            continue;
-           }
-           else{
-            int packet=i;
-            cout<<"Sender sends packet with sequence number "<<packet<<endl;
-            AckNo=selective_reciever(packet);
-           
-            if(recieving_time>timeout_duration){      //ACK got lost
-               cout<<"ACK "<<AckNo<< " got lost"<<endl;
-               i++;
-            }
-            else{
-              if(ack==true){
-                cout<<"ACK "<<AckNo<<" recieved"<<endl;
-                int count=0;
-                //slide window if consecutive elemnts in window are marked
-              for(int j=0;j<=AckNo;j++){
-                if(selective_window[j]==false){
-                  break;
-                }
-                count++;
-              }
-              S_f=count;
-              
-              i++;
-              S_n=i;
-              }
-            }
-            
-           }
-           
-          
-         } 
-         //timeout
-          if(i==S_z){
-            cout<<endl;
-             cout<<"Time out occured"<<endl;
-            
-             //check which packet  is not recieved and resend it
-             for(int j=0;j<selective_window.size();j++){
-               
-              if(selective_window[j]==false){
-                cout<<"Resending Packet "<<j<<" as it wasn't recieved"<<endl;
-                //resending packet
-                AckNo=selective_reciever(j);
-                cout<<"ACK "<<AckNo<<" recieved"<<endl;
-              }
-             }
-           }
-    }
-   //Selective Repeat protocol
-   void Selective_Repeat(){
-    //m=4
-    cout<<endl;
-    int size=8;
-    for(int i=0;i<size;i++){
-      selective_window[i]=false;
-    }
-    selective_sender();
 
-   }
+      // Simulate random corruption (returns true if packet is corrupted)
+      bool is_packet_corrupted() {
+          // 20% chance of corruption
+          return (rand() % 5 == 0);
+      }
+
+      int selective_reciever(int packet, int checksum) {
+          selective_window[packet] = true;
+          int AckNo = packet;
+          // Simulate checksum verification
+          if (checksum != calculate_checksum(packet)) {
+          cout << "Packet " << packet << " is corrupted (checksum mismatch). Requesting retransmission." << endl;
+          selective_window[packet] = false;
+          ack = false;
+          return -1; // Indicate corruption
+          }
+          // Slide receiving window if consecutive elements are marked
+          int count = 0;
+          for (int j = 0; j < selective_window.size(); j++) {
+          if (selective_window[j] == false) {
+          break;
+          }
+          count++;
+          }
+          R_n = count;
+          ack = true;
+          return AckNo;
+      }
+
+      void selective_sender() {
+          srand(time(nullptr));
+          int S_n = 0, S_f = 1, S_z = selective_window.size();
+          int i = 0, AckNo;
+          while (i < S_z) {
+          srand(time(NULL));
+          ack = false;
+          int timeout_duration = 4, sending_time = rand() % 6, recieving_time = rand() % 6;
+
+          sleep(sending_time);
+          if (sending_time > timeout_duration) { // packet got lost
+          cout << "Sender sends packet with sequence number " << i << " but it got lost" << endl;
+          i++;
+          continue;
+          } else {
+          int packet = i;
+          int checksum = calculate_checksum(packet);
+          // Simulate corruption
+          if (is_packet_corrupted()) {
+              cout << "Sender sends packet with sequence number " << packet << " (corrupted)" << endl;
+              // Send wrong checksum
+              AckNo = selective_reciever(packet, checksum + 1);
+          } else {
+              cout << "Sender sends packet with sequence number " << packet << endl;
+              AckNo = selective_reciever(packet, checksum);
+          }
+
+          if (AckNo == -1) {
+              // Corrupted, will resend later
+              i++;
+              continue;
+          }
+
+          if (recieving_time > timeout_duration) { // ACK got lost
+              cout << "ACK " << AckNo << " got lost" << endl;
+              i++;
+          } else {
+              if (ack == true) {
+              cout << "ACK " << AckNo << " recieved" << endl;
+              int count = 0;
+              // Slide window if consecutive elements in window are marked
+              for (int j = 0; j <= AckNo; j++) {
+              if (selective_window[j] == false) {
+                  break;
+              }
+              count++;
+              }
+              S_f = count;
+
+              i++;
+              S_n = i;
+              }
+          }
+          }
+          }
+          // timeout
+          if (i == S_z) {
+          cout << endl;
+          cout << "Time out occured" << endl;
+
+          // check which packet is not recieved and resend it
+          for (int j = 0; j < selective_window.size(); j++) {
+          if (selective_window[j] == false) {
+              cout << "Resending Packet " << j << " as it wasn't recieved or was corrupted" << endl;
+              int checksum = calculate_checksum(j);
+              AckNo = selective_reciever(j, checksum);
+              if (AckNo != -1)
+              cout << "ACK " << AckNo << " recieved" << endl;
+          }
+          }
+          }
+      }
+      // Selective Repeat protocol
+      void Selective_Repeat() {
+          // m=4
+          cout << endl;
+          int size = 8;
+          for (int i = 0; i < size; i++) {
+          selective_window[i] = false;
+          }
+          selective_sender();
+      }
     void prompt(string DeviceType,int d,map<int,bool> &mp){
      
      for(int i=1;i<=d;i++){
@@ -444,7 +470,7 @@ class Process {
 public:
     int processID;
     int portNumber;
-    int assignPortNumber(std::map<int, Process>& processMap) {
+    int assignPortNumber(std::map<int, Process>& processMap) {//ephemeral port number
     std::srand(std::time(nullptr));
 
     long long port =rand()%65535;
@@ -521,7 +547,7 @@ int random(int min, int max) {
 }
 //generate classless IPV4 Address
 string generate_classless_ip(string NID) {
-    // Assume NID is like "192.168.1.0" with no slash
+  
     vector<string> parts;
     stringstream ss(NID);
     string token;
@@ -532,7 +558,7 @@ string generate_classless_ip(string NID) {
     int randomHost = rand() % 254 + 1;
     string newIP = parts[0] + "." + parts[1] + "." + parts[2] + "." + to_string(randomHost);
     
-    return newIP + "/24";  // Append /24 yourself
+    return newIP + "/25";  
 }
 
 
@@ -599,10 +625,10 @@ int NetworkNo(string sourceIp){
 }
 void Routing_Table(Router &r, int source) {
     // Extract NIDs from local and remote router interfaces
-    string nid1 = getNID(IP1);       // Local interface 1
-    string nid2 = getNID(IP2);       // Local interface 2
-    string rnid1 = getNID(r.IP1);    // Remote router interface 1
-    string rnid2 = getNID(r.IP2);    // Remote router interface 2
+    string nid1 = getNID(IP1);      
+    string nid2 = getNID(IP2);       
+    string rnid1 = getNID(r.IP1);    
+    string rnid2 = getNID(r.IP2);    
 
     // Directly connected networks
     routing_table[{nid1, 24}] = {"1", "0"};
@@ -610,11 +636,11 @@ void Routing_Table(Router &r, int source) {
 
     // Static routes to other router's networks
     if (source == 1) {
-        routing_table[{rnid2, 24}] = {"2", r.IP1};         // Route to Router 2 network
-        routing_table[{"0.0.0.0", 0}] = {"2", r.IP1};      // Default route
+        routing_table[{rnid2, 24}] = {"2", r.IP1};         
+        routing_table[{"0.0.0.0", 0}] = {"2", r.IP1};      
     } else {
-        routing_table[{rnid1, 24}] = {"2", r.IP2};         // Route to Router 1 network
-        routing_table[{"0.0.0.0", 0}] = {"2", r.IP2};      // Default route
+        routing_table[{rnid1, 24}] = {"2", r.IP2};         
+        routing_table[{"0.0.0.0", 0}] = {"2", r.IP2};     
     }
 }
 

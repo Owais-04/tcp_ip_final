@@ -451,9 +451,12 @@ class network_prompt{
               cout<<endl;
              cout<<"Log of TCP Packets sent from client to server"<<endl;
               cout<<endl;
-              cout<<"Protocol used : Selective Repeat"<<endl;
+            
+             cout<<"Protocol used : Selective Repeat"<<endl;
               cout<<endl;
               end.Selective_Repeat();
+
+              
               cout<<endl;
               s1.sendMessage(devices[sender-1],DestinationIp);
               cout<<endl;
